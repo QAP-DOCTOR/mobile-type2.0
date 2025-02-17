@@ -340,12 +340,16 @@
         function takeDamage() {
             game.health = Math.max(0, game.health - CONFIG.DAMAGE);
             updateHealth();
-            game.expectingInput = false;
+            game.expectingInput = false;// 防止多次响应错误
             
             if (game.health <= 0) {
                 game.active = false;
                 document.getElementById('gameOver').style.display = 'block';
-            }
+            }else {
+        // 重新允许输入
+        game.expectingInput = true;
+    }
+}
         }
 
         function updateHealth() {
