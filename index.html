@@ -270,6 +270,7 @@
         function handleControl(e) {
             e.preventDefault();
             const dir = this.dataset.dir;
+            console.log(`Direction pressed: ${dir}`);  // 检查方向按钮是否被正确识别
             if (game.active && game.expectingInput) {
                 if (dir === game.currentDir) {
                     clearTimeout(game.timeoutId);
@@ -290,6 +291,7 @@
                 case 'left': game.boyPos.x -= unit; break;
                 case 'right': game.boyPos.x += unit; break;
             }
+            console.log(`Boy moved to: (${game.boyPos.x}, ${game.boyPos.y})`);  // 确认位置更新
             constrainPosition(game.boyPos);
             game.successCount++;
         }
@@ -326,8 +328,8 @@
             const margin = CONFIG.MARGIN + CONFIG.CHARACTER_RADIUS;
             pos.x = Math.max(margin, Math.min(game.canvas.width - margin, pos.x));
             pos.y = Math.max(margin, Math.min(game.canvas.height - margin, pos.y));
-        }
-
+            console.log(`Position constrained to: (${pos.x}, ${pos.y})`);
+}
         function checkSuccess() {
             if (game.successCount >= CONFIG.REQUIRED_STEPS) {
                 game.active = false;
