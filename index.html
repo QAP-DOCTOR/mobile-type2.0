@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>火柴人终极版</title>
+    <style>
+        body {
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background: #f0f8ff;
+            touch-action: manipulation;
+            min-height: 100vh;
+        }
+        #gameContainer {
+            position: relative;
+            margin: 20px auto;
+        }
+        #gameCanvas {
+            border: 3px solid #333;
+            background: #fff;
+            display: block;
+        }
+        #controls {
+            position: absolute;
+            bottom: 30px;
+            right: 30px;
+            display: grid;
+            grid-template-areas: 
+                ". up ."
+                "left . right"
+                ". down .";
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+            padding: 10px;
+            background: rgba(255,255,255,0.8);
+            border-radius: 20px;
+        }
+        .control-btn {
+            width: 70px;
+            height: 70px;
+            border-radius: 50%;
+            background: rgba(0,0,0,0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 28px;
+            color: white;
+            cursor: pointer;
+            touch-action: none;
+            user-select: none;
+            transition: all 0.2s;
+        }
+        .control-btn[data-dir="up"] { grid-area: up; }
+        .control-btn[data-dir="left"] { grid-area: left; }
+        .control-btn[data-dir="down"] { grid-area: down; }
+        .control-btn[data-dir="right"] { grid-area: right; }
+        .control-btn:active {
+            transform: scale(0.9);
+            background: rgba(0,0,0,0.5);
+        }
+        #health {
+            width: 300px;
+            height: 25px;
+            border: 3px solid #333;
+            margin: 20px 0;
+            background: #eee;
+            border-radius: 5px;
+        }
+        #healthBar {
+            height: 100%;
+            width: 100%;
+            background: linear-gradient(to right, #4CAF50, #FFC107, #F44336);
+            transition: width 0.3s;
+            border-radius: 3px;
+        }
+        #gameOver, #loveButton {
+            display: none;
+            position: fixed;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 48px;
+            color: #F44336;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+            z-index: 1000;
+        }
+        #gameOver { top: 30%; }
+        #loveButton {
+            top: 40%;
+            background: #FF69B4;
+            padding: 25px 50px;
+            border-radius: 35px;
+            color: white;
+            cursor: pointer;
+            border: none;
+            font-size: 36px;
+        }
+        #videoContainer {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 2000;
+            background: rgba(0,0,0,0.95);
+            padding: 20px;
+            border-radius: 15px;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+        }
+        #restart {
+            margin: 20px;
+            padding: 15px 40px;
+            font-size: 20px;
+            background: #2196F3;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div id="health">
+        <div id="healthBar"></div>
+    </div>
+    <div id="gameContainer">
+        <canvas id="gameCanvas" width="800" height="600"></canvas>
+        <div id="controls">
+            <div class="control-btn" data-dir="up">↑</div>
+            <div class="control-btn" data-dir="left">←</div>
+            <div class="control-btn" data-dir="down">↓</div>
+            <div class="control-btn" data-dir="right">→</div>
+        </div>
+    </div>
+    <div id="gameOver">LOSER!</div>
+    <button id="loveButton" onclick="showVideo()">❤️ LOVE ❤️</button>
+    <div id="videoContainer">
+        <video id="rewardVideo" width="720" controls>
+            <source src="your-video.mp4" type="video/mp4">
+        </video>
+    </div>
+    <button id="restart" onclick="startGame()">重新开始</button>
+
+    <script>
+        // 游戏配置
+        const CONFIG = {
+            UNIT_RATIO: 0.1,
+            INIT_HEALTH: 100,
+            DAMAGE: 34,
+            REQUIRED_STEPS: 12,
+            INIT_SPEED: 1300,
+            MIN_SPEED: 500,
+            SPEED_DECREMENT: 70,
+            CHARACTER_RADIUS: 30,
+            MARGIN: 50,
+            LINE_WIDTH: 6,
+            RESPONSE_TIME: 0.7
+        };
+
+        let game = {
+            canvas: null,
+            ctx: null,
+            boyPos: { x: 0, y: 0 },
+            girlPos: { x: 0, y: 0 },
+            currentDir: null,
+            health: CONFIG.INIT_HEALTH,
+            active: false,
+            timeoutId: null,
+            speed: CONFIG.INIT_SPEED,
+            expectingInput: false,
+            successCount: 0
+        };
+
+        function init() {
+            game.canvas = document.getElementById('gameCanvas');
+            game.ctx = game.canvas.getContext('2d');
+            
+            document.querySelectorAll('.control-btn').forEach(btn => {
+                btn.addEventListener('mousedown', handleControl);
+                btn.addEventListener('touchstart', handleControl);
+            });
+
+            window.addEventListener('resize', adjustCanvasSize);
+            adjustCanvasSize();
+            startGame();
+        }
+
+        function adjustCanvasSize() {
+            const isMobile = window.innerWidth < 768;
+            const container = document.getElementById('gameContainer');
+            
+            if (isMobile) {
+                const size = Math.min(window.innerWidth * 0.95, 500);
+                game.canvas.width = size;
+                game.canvas.height = size * 1.2;
+            } else {
+                game.canvas.width = 800;
+                game.canvas.height = 600;
+            }
+            
+            resetPositions();
+            drawScene();
+        }
+
+        function startGame() {
+            game.active = true;
+            game.health = CONFIG.INIT_HEALTH;
+            game.speed = CONFIG.INIT_SPEED;
+            game.successCount = 0;
+            
+            resetPositions();
+            
+            document.getElementById('gameOver').style.display = 'none';
+            document.getElementById('loveButton').style.display = 'none';
+            document.getElementById('videoContainer').style.display = 'none';
+            updateHealth();
+            
+            startGirlMovement();
+            gameLoop();
+        }
+
+        function resetPositions() {
+            const margin = CONFIG.MARGIN + CONFIG.CHARACTER_RADIUS;
+            game.boyPos = {
+                x: game.canvas.width/2,
+                y: game.canvas.height - margin
+            };
+            game.girlPos = {
+                x: game.canvas.width/2,
+                y: margin
+            };
+        }
+
+        function gameLoop() {
+            if (!game.active) return;
+            drawScene();
+            requestAnimationFrame(gameLoop);
+        }
+
+        function drawScene() {
+            game.ctx.clearRect(0, 0, game.canvas.width, game.canvas.height);
+            
+            // 绘制红色女生
+            drawCharacter(game.girlPos.x, game.girlPos.y, '#FF0000');
+            // 绘制蓝色男生
+            drawCharacter(game.boyPos.x, game.boyPos.y, '#0000FF');
+        }
+
+        function drawCharacter(x, y, color) {
+            game.ctx.beginPath();
+            // 头部
+            game.ctx.arc(x, y - 40, CONFIG.CHARACTER_RADIUS, 0, Math.PI * 2);
+            // 身体
+            game.ctx.moveTo(x, y - 15);
+            game.ctx.lineTo(x, y + 60);
+            // 手臂
+            game.ctx.moveTo(x - 40, y + 20);
+            game.ctx.lineTo(x + 40, y + 20);
+            // 腿
+            game.ctx.moveTo(x, y + 60);
+            game.ctx.lineTo(x - 30, y + 110);
+            game.ctx.moveTo(x, y + 60);
+            game.ctx.lineTo(x + 30, y + 110);
+            game.ctx.strokeStyle = color;
+            game.ctx.lineWidth = CONFIG.LINE_WIDTH;
+            game.ctx.stroke();
+        }
+
+        function handleControl(e) {
+            e.preventDefault();
+            const dir = this.dataset.dir;
+            if (game.active && game.expectingInput) {
+                if (dir === game.currentDir) {
+                    clearTimeout(game.timeoutId);
+                    game.expectingInput = false;
+                    moveBoy();
+                    checkSuccess();
+                } else {
+                    takeDamage();
+                }
+            }
+        }
+
+        function moveBoy() {
+            const unit = game.canvas.width * CONFIG.UNIT_RATIO;
+            switch(game.currentDir) {
+                case 'up': game.boyPos.y -= unit; break;
+                case 'down': game.boyPos.y += unit; break;
+                case 'left': game.boyPos.x -= unit; break;
+                case 'right': game.boyPos.x += unit; break;
+            }
+            constrainPosition(game.boyPos);
+            game.successCount++;
+        }
+
+        function startGirlMovement() {
+            if (!game.active) return;
+
+            const directions = ['up', 'down', 'left', 'right'].filter(d => d !== game.currentDir);
+            game.currentDir = directions[Math.floor(Math.random() * directions.length)];
+            
+            moveGirl();
+            
+            game.expectingInput = true;
+            game.timeoutId = setTimeout(() => {
+                if (game.expectingInput) takeDamage();
+            }, game.speed * CONFIG.RESPONSE_TIME);
+
+            game.speed = Math.max(CONFIG.MIN_SPEED, game.speed - CONFIG.SPEED_DECREMENT);
+            setTimeout(startGirlMovement, game.speed);
+        }
+
+        function moveGirl() {
+            const unit = game.canvas.width * CONFIG.UNIT_RATIO;
+            switch(game.currentDir) {
+                case 'up': game.girlPos.y -= unit; break;
+                case 'down': game.girlPos.y += unit; break;
+                case 'left': game.girlPos.x -= unit; break;
+                case 'right': game.girlPos.x += unit; break;
+            }
+            constrainPosition(game.girlPos);
+        }
+
+        function constrainPosition(pos) {
+            const margin = CONFIG.MARGIN + CONFIG.CHARACTER_RADIUS;
+            pos.x = Math.max(margin, Math.min(game.canvas.width - margin, pos.x));
+            pos.y = Math.max(margin, Math.min(game.canvas.height - margin, pos.y));
+        }
+
+        function checkSuccess() {
+            if (game.successCount >= CONFIG.REQUIRED_STEPS) {
+                game.active = false;
+                document.getElementById('loveButton').style.display = 'block';
+            }
+        }
+
+        function takeDamage() {
+            game.health = Math.max(0, game.health - CONFIG.DAMAGE);
+            updateHealth();
+            game.expectingInput = false;
+            
+            if (game.health <= 0) {
+                game.active = false;
+                document.getElementById('gameOver').style.display = 'block';
+            }
+        }
+
+        function updateHealth() {
+            document.getElementById('healthBar').style.width = game.health + '%';
+        }
+
+        function showVideo() {
+            const video = document.getElementById('rewardVideo');
+            const container = document.getElementById('videoContainer');
+            
+            document.getElementById('loveButton').style.display = 'none';
+            container.style.display = 'block';
+            video.play().catch(() => {
+                video.controls = true;
+            });
+            
+            video.onended = () => {
+                container.style.display = 'none';
+                startGame();
+            }
+        }
+
+        // 启动游戏
+        init();
+    </script>
+</body>
+</html>
